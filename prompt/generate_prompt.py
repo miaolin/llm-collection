@@ -29,6 +29,64 @@ class PromptOptimizer:
         except FileNotFoundError:
             raise FileNotFoundError("guideline_prompt.MD not found in prompt/ directory")
     
+    def _extract_optimized_prompt(self, full_response: str) -> str:
+        """
+        Extract the optimized prompt from the full GPT-4 response.
+        
+        Args:
+            full_response: The complete response from GPT-4
+            
+        Returns:
+            The extracted optimized prompt
+        """
+        # Look for the optimized prompt section
+        markers = [
+            "**Your Optimized Prompt:**",
+            "**Optimized Prompt:**",
+            "Optimized Prompt:",
+            "DELIVER\n\n",
+            "### 4. DELIVER\n\n"
+        ]
+        
+        for marker in markers:
+            if marker in full_response:
+                # Extract content after the marker
+                start_idx = full_response.find(marker) + len(marker)
+                content_after_marker = full_response[start_idx:].strip()
+                
+                # Look for the next section or end
+                next_sections = [
+                    "**Key Improvements:**",
+                    "**Techniques Applied:**",
+                    "**Pro Tip:**",
+                    "### 1. DECONSTRUCT",
+                    "### 2. DIAGNOSE",
+                    "### 3. DEVELOP"
+                ]
+                
+                end_idx = len(content_after_marker)
+                for section in next_sections:
+                    section_idx = content_after_marker.find(section)
+                    if section_idx != -1 and section_idx < end_idx:
+                        end_idx = section_idx
+                
+                optimized_prompt = content_after_marker[:end_idx].strip()
+                
+                # Clean up the prompt
+                if optimized_prompt.startswith("```"):
+                    # Remove markdown code blocks if present
+                    lines = optimized_prompt.split('\n')
+                    if lines[0].strip() == "```":
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    optimized_prompt = '\n'.join(lines).strip()
+                
+                return optimized_prompt
+        
+        # If no markers found, return the full response
+        return full_response
+    
     def optimize_prompt(self, 
                        user_input: str, 
                        task_type: str = "coding",
@@ -74,7 +132,8 @@ Follow the {complexity.upper()} MODE guidelines and provide the response in the 
                 max_tokens=2000
             )
             
-            optimized_content = response.choices[0].message.content
+            full_response = response.choices[0].message.content
+            optimized_content = self._extract_optimized_prompt(full_response)
             
             return {
                 "original_input": user_input,
@@ -82,6 +141,7 @@ Follow the {complexity.upper()} MODE guidelines and provide the response in the 
                 "complexity": complexity,
                 "target_platform": target_platform,
                 "optimized_prompt": optimized_content,
+                "full_response": full_response,
                 "model_used": "gpt-4",
                 "tokens_used": response.usage.total_tokens
             }
